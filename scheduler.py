@@ -101,7 +101,7 @@ def main():
             test_send_sms,
             trigger=CronTrigger(
                 hour=17,
-                minute=30,
+                minute=50,
                 timezone=pytz.timezone('America/Los_Angeles')
             )
         )
