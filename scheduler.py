@@ -7,6 +7,8 @@ from twilio.rest import Client
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
+import plaid
+from plaid.api import plaid_api
 
 # Load environment variables
 load_dotenv()
@@ -20,6 +22,43 @@ logging.basicConfig(
         logging.FileHandler('scheduler.log')
     ]
 )
+
+def get_account_balances():
+    """Fetch account balances from Plaid"""
+    try:
+        # Initialize Plaid client
+        configuration = plaid.Configuration(
+            host=plaid.Environment.Sandbox,
+            api_key={
+                'clientId': os.getenv('PLAID_CLIENT_ID'),
+                'secret': os.getenv('PLAID_SECRET'),
+            }
+        )
+        
+        api_client = plaid.ApiClient(configuration)
+        client = plaid_api.PlaidApi(api_client)
+        
+        # Get account balances
+        access_token = os.getenv('PLAID_ACCESS_TOKEN')
+        request = {
+            "access_token": access_token,
+            "options": {
+                "min_last_updated_datetime": "2020-01-01T00:00:00Z"
+            }
+        }
+        response = client.accounts_balance_get(request)
+        
+        # Format balance message
+        message_parts = ["Account Balances:"]
+        for account in response.accounts:
+            balance = account.balances.current
+            name = account.name
+            message_parts.append(f"{name}: ${balance:,.2f}")
+        
+        return "\n".join(message_parts)
+    except Exception as e:
+        logging.error(f"Error fetching Plaid balances: {str(e)}")
+        return "Unable to fetch account balances"
 
 def test_send_sms():
     """Test function to send a single SMS message via Twilio"""
@@ -35,19 +74,22 @@ def test_send_sms():
             print("Error: Missing Twilio credentials in .env file")
             return
         
+        # Get account balances
+        balance_message = get_account_balances()
+        
         # Initialize Twilio client
         client = Client(account_sid, auth_token)
         
         # Send message
         message = client.messages.create(
-            body="This is your 5 PM PST notification!",
+            body=balance_message,
             from_=from_phone,
             to=to_phone
         )
         
-        print(f"Success! Message SID: {message.sid}")
+        logging.info(f"Success! Message SID: {message.sid}")
     except Exception as e:
-        print(f"Error sending SMS: {str(e)}")
+        logging.error(f"Error sending SMS: {str(e)}")
 
 def main():
     try:
